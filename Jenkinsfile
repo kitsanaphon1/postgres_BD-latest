@@ -16,8 +16,13 @@ pipeline {
     stage('Deploy PostgreSQL') {
       steps {
         sh '''
-          docker --context=$DOCKER_CONTEXT compose down || true
+          echo "🔄 Stopping and removing old containers with volume..."
+          docker --context=$DOCKER_CONTEXT compose down -v || true
+
+          echo "⬇️ Pulling latest images..."
           docker --context=$DOCKER_CONTEXT compose pull
+
+          echo "🚀 Starting fresh container..."
           docker --context=$DOCKER_CONTEXT compose up -d
         '''
       }
@@ -25,14 +30,23 @@ pipeline {
 
     stage('Wait for DB to be ready') {
       steps {
-        // รอให้ DB พร้อม (แบบง่าย)
-        sh 'sleep 10'
+        sh '''
+          echo "⏳ Waiting for PostgreSQL to be ready..."
+          for i in {1..10}; do
+            if docker --context=$DOCKER_CONTEXT exec sooyaa-postgres pg_isready -U sooyaa; then
+              echo "✅ PostgreSQL is ready"
+              break
+            fi
+            sleep 3
+          done
+        '''
       }
     }
 
     stage('Verify Tables') {
       steps {
         sh '''
+          echo "📋 Listing tables..."
           docker --context=$DOCKER_CONTEXT exec sooyaa-postgres \
           psql -U sooyaa -d sooyaa_db -c "\\dt"
         '''
@@ -42,6 +56,7 @@ pipeline {
     stage('Show Sample Data') {
       steps {
         sh '''
+          echo "📄 Displaying data from users table..."
           docker --context=$DOCKER_CONTEXT exec sooyaa-postgres \
           psql -U sooyaa -d sooyaa_db -c "SELECT * FROM users;"
         '''
