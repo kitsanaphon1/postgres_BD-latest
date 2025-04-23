@@ -2,31 +2,46 @@ pipeline {
   agent any
 
   environment {
+    // ชื่อตัวแปร Docker context ที่ใช้สำหรับ remote host
     DOCKER_CONTEXT = "jenkins-remote"
   }
 
   stages {
+
     stage('Checkout SQL') {
       steps {
+        // ดึงโค้ดจาก GitHub repository
         git branch: 'main', url: 'https://github.com/kitsanaphon1/postgres_BD-latest.git'
       }
     }
 
-    stage('Copy and Run SQL') {
+    stage('Run SQL Scripts in Order') {
       steps {
-        sh '''
-          echo "📄 Copying init.sql into container..."
-          docker --context=$DOCKER_CONTEXT cp ./initdb/init.sql sooyaa-postgres:/tmp/init.sql
+        script {
+          // อ่านชื่อไฟล์ .sql ทั้งหมดใน initdb/ แล้ว sort เพื่อรันเรียงตามชื่อ (01_...10_)
+          def sqlFiles = sh(script: 'ls -1 initdb/*.sql | sort', returnStdout: true).trim().split('\n')
 
-          echo "▶️ Running SQL inside PostgreSQL..."
-          docker --context=$DOCKER_CONTEXT exec sooyaa-postgres \
-            psql -U sooyaa -d sooyaa_db -f /tmp/init.sql
-        '''
+          // loop รันทุกไฟล์ทีละตัว
+          for (file in sqlFiles) {
+            def fileName = file.tokenize('/').last()
+            echo "▶️ Running SQL: ${fileName}"
+
+            sh """
+              # คัดลอกไฟล์ .sql เข้าไปใน container ที่ชื่อ sooyaa-postgres
+              docker --context=$DOCKER_CONTEXT cp ${file} sooyaa-postgres:/tmp/${fileName}
+
+              # สั่งให้ PostgreSQL รันไฟล์ SQL ที่คัดลอกเข้าไป
+              docker --context=$DOCKER_CONTEXT exec sooyaa-postgres \
+                psql -U sooyaa -d sooyaa_db -f /tmp/${fileName}
+            """
+          }
+        }
       }
     }
 
-    stage('Verify') {
+    stage('Verify Tables') {
       steps {
+        // แสดงตารางทั้งหมดในฐานข้อมูลเพื่อยืนยันว่าทำงานถูกต้อง
         sh '''
           docker --context=$DOCKER_CONTEXT exec sooyaa-postgres \
             psql -U sooyaa -d sooyaa_db -c "\\dt"
