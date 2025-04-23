@@ -4,31 +4,46 @@ pipeline {
   environment {
     COMPOSE_PROJECT_NAME = "sooyaa"
     DOCKER_CONTEXT = "jenkins-remote"
+    DEPLOY_MODE = "up" // เปลี่ยนเป็น "down" เพื่อ stop service และลบ volume
   }
 
   stages {
     stage('Checkout') {
       steps {
-        git branch: 'main', url: 'https://github.com/kitsanaphon1/postgres_BD-latest.git'
+        git branch: 'main', url: 'https://github.com/YOUR_USERNAME/YOUR_REPO.git'
       }
     }
 
-    stage('Deploy PostgreSQL') {
+    stage('Handle Deploy Mode') {
       steps {
-        sh '''
-          echo "🔄 Stopping and removing old containers with volume..."
-          docker --context=$DOCKER_CONTEXT compose down -v || true
+        script {
+          if (env.DEPLOY_MODE == 'up') {
+            sh '''
+              echo "🧹 Cleanup old containers & volumes"
+              docker --context=$DOCKER_CONTEXT compose down -v || true
 
-          echo "⬇️ Pulling latest images..."
-          docker --context=$DOCKER_CONTEXT compose pull
+              echo "⬇️ Pulling images"
+              docker --context=$DOCKER_CONTEXT compose pull
 
-          echo "🚀 Starting fresh container..."
-          docker --context=$DOCKER_CONTEXT compose up -d
-        '''
+              echo "🚀 Starting PostgreSQL with docker-compose up"
+              docker --context=$DOCKER_CONTEXT compose up -d
+            '''
+          } else if (env.DEPLOY_MODE == 'down') {
+            sh '''
+              echo "🛑 Stopping and removing PostgreSQL containers + volumes"
+              docker --context=$DOCKER_CONTEXT compose down -v || true
+            '''
+          } else {
+            error "Invalid DEPLOY_MODE: ${env.DEPLOY_MODE} (must be 'up' or 'down')"
+          }
+        }
       }
     }
 
-    stage('Wait for DB to be ready') {
+    stage('Wait for DB (if up)') {
+      when {
+        expression { return env.DEPLOY_MODE == 'up' }
+      }
       steps {
         sh '''
           echo "⏳ Waiting for PostgreSQL to be ready..."
@@ -39,26 +54,6 @@ pipeline {
             fi
             sleep 3
           done
-        '''
-      }
-    }
-
-    stage('Verify Tables') {
-      steps {
-        sh '''
-          echo "📋 Listing tables..."
-          docker --context=$DOCKER_CONTEXT exec sooyaa-postgres \
-          psql -U sooyaa -d sooyaa_db -c "\\dt"
-        '''
-      }
-    }
-
-    stage('Show Sample Data') {
-      steps {
-        sh '''
-          echo "📄 Displaying data from users table..."
-          docker --context=$DOCKER_CONTEXT exec sooyaa-postgres \
-          psql -U sooyaa -d sooyaa_db -c "SELECT * FROM users;"
         '''
       }
     }
