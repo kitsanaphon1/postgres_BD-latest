@@ -9,7 +9,7 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        git branch: 'main', url: 'https://github.com/YOUR_USERNAME/YOUR_REPO.git'
+        git branch: 'main', url: 'https://github.com/kitsanaphon1/postgres_BD-latest.git'
       }
     }
 
@@ -25,15 +25,25 @@ pipeline {
 
     stage('Wait for DB to be ready') {
       steps {
-        // รอ postgres พร้อม (สามารถเปลี่ยนได้ตามวิธีที่เหมาะกับคุณ)
+        // รอให้ DB พร้อม (แบบง่าย)
         sh 'sleep 10'
       }
     }
 
-    stage('Verify DB Setup') {
+    stage('Verify Tables') {
       steps {
         sh '''
-          docker --context=$DOCKER_CONTEXT exec sooyaa-postgres psql -U sooyaa -d sooyaa_db -c "\\dt"
+          docker --context=$DOCKER_CONTEXT exec sooyaa-postgres \
+          psql -U sooyaa -d sooyaa_db -c "\\dt"
+        '''
+      }
+    }
+
+    stage('Show Sample Data') {
+      steps {
+        sh '''
+          docker --context=$DOCKER_CONTEXT exec sooyaa-postgres \
+          psql -U sooyaa -d sooyaa_db -c "SELECT * FROM users;"
         '''
       }
     }
